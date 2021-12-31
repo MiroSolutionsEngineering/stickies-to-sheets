@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="google-signin-client_id"
+    content="817848355474-ktaisi3u8cdlkta735gfq0jvq89lnnp0.apps.googleusercontent.com">
+  <link rel="stylesheet" href="/src/assets/style.css" />
+  <script src="https://miro.com/app/static/sdk/v2/miro.js"></script>
+  <script src="https://apis.google.com/js/platform.js" async defer></script>
+</head>
+
+<body>
+  <div class="grid wrapper">
+    <div class="cs1 ce12">
+      <!--Add buttons to initiate auth sequence and sign out-->
+      <button id="authorize_button" style="display: none;">Authorize</button>
+      <button id="signout_button" style="display: none;">Sign Out</button>
+    </div>
+    <div class="cs1 ce12">
+      <h1>Convert Your Groups of Stickies to Google Sheets!</h1>
+      <p id='stickiestable'>Select some stickies to export to Google Sheets</p>
+    </div>
+    <div class="cs1 ce12">
+      <a id="export_to_sheets" class="button button-primary" style="display: none;">
+        Export to Google Sheets
+      </a>
+      <pre id="content" style="white-space: pre-wrap;"></pre>
+    </div>
+    <div id="results" class="grid">
+
+    </div>
+  </div>
+  <script type="module" src="/src/app.js"></script>
+  <script type="text/javascript">
+    // Client ID and API key from the Developer Console
+    var CLIENT_ID = '<YOUR CLIENT ID>';
+    var API_KEY = '<YOUR API KEY>';
+
+    // Array of API discovery doc URLs for APIs used by the quickstart
+    var DISCOVERY_DOCS = ["https://sheets.googleapis.com/$discovery/rest?version=v4"];
+
+    // Authorization scopes required by the API; multiple scopes can be
+    // included, separated by spaces.
+    var SCOPES = "https://www.googleapis.com/auth/spreadsheets";
+
+    var authorizeButton = document.getElementById('authorize_button');
+    var signoutButton = document.getElementById('signout_button');
+    var exportButton = document.getElementById('export_to_sheets');
+    var results = document.getElementById('results');
+
+    /**
+     *  On load, called to load the auth2 library and API client library.
+     */
+    function handleClientLoad() {
+      gapi.load('client:auth2', initClient);
+    }
+
+    /**
+     *  Initializes the API client library and sets up sign-in state
+     *  listeners.
+     */
+    function initClient() {
+      gapi.client.init({
+        apiKey: API_KEY,
+        clientId: CLIENT_ID,
+        discoveryDocs: DISCOVERY_DOCS,
+        scope: SCOPES
+      }).then(function () {
+        // Listen for sign-in state changes.
+        gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+        // Handle the initial sign-in state.
+        updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+        authorizeButton.onclick = handleAuthClick;
+        signoutButton.onclick = handleSignoutClick;
+        exportButton.onclick = handleExportClick;
+      }, function (error) {
+        appendPre(JSON.stringify(error, null, 2));
+      });
+    }
+
+    /**
+     *  Called when the signed in status changes, to update the UI
+     *  appropriately. After a sign-in, the API is called.
+     */
+    function updateSigninStatus(isSignedIn) {
+      if (isSignedIn) {
+        authorizeButton.style.display = 'none';
+        exportButton.style.display = 'block';
+        signoutButton.style.display = 'block';
+        //listMajors();
+        //createSpreadsheet();
+      } else {
+        authorizeButton.style.display = 'block';
+        exportButton.style.display = 'none';
+        signoutButton.style.display = 'none';
+      }
+    }
+
+    /**
+     *  Sign in the user upon button click.
+     */
+    function handleAuthClick(event) {
+      gapi.auth2.getAuthInstance().signIn();
+    }
+
+    /**
+     *  Sign out the user upon button click.
+     */
+    function handleSignoutClick(event) {
+      gapi.auth2.getAuthInstance().signOut();
+    }
+
+    async function handleExportClick() {
+      const selection = await miro.board.getSelection()
+      if (selection.length == 0) {
+
+      }
+      const valueMatrix = await structureSelection(selection)
+      createSpreadsheet(valueMatrix)
+    }
+
+    function appendLink(link) {
+      var grid = document.getElementById('results');
+
+      var div = document.createElement('div');
+      div.className = "cs1 ce12"
+
+      var a = document.createElement('a');
+      var textContent = document.createTextNode(link.split('/')[5] + '\n');
+      a.appendChild(textContent);
+      a.href = link;
+      a.style = "width: 90%";
+      //a.className = "link link-primary p-small"
+      a.target = "_blank"
+      div.appendChild(a);
+
+      grid.appendChild(div);
+    }
+
+    async function createSpreadsheet(valueMatrix) {
+      gapi.client.sheets.spreadsheets.create({
+        properties: {
+          title: "Miro Created Spreadsheet"
+        }
+      }).then((response) => {
+        console.log(response)
+
+        appendLink(response.result.spreadsheetUrl);
+
+        var values = valueMatrix
+
+        var body = {
+          values: values
+        };
+        gapi.client.sheets.spreadsheets.values.update({
+          spreadsheetId: response.result.spreadsheetId,
+          range: "Sheet1!A1",
+          valueInputOption: "USER_ENTERED",
+          resource: body
+        }).then((response) => {
+          var result = response.result;
+          console.log(`${result.updatedCells} cells updated.`);
+        });
+      });
+    }
+
+    async function structureSelection(selection) {
+      let selected_x, selected_y;
+      selected_x = selected_y = selection;
+
+      selected_x.sort(function (a, b) {
+        return a.x - b.x
+      })
+
+      selected_y.sort(function (a, b) {
+        return a.y - b.y
+      })
+
+      let last_value = selected_x[0].y
+      let valueMatrix = []
+      let currentRow = []
+
+      selected_x.map((element, idx, selected_x) => {
+        if (element.y != last_value) {
+          valueMatrix.push(currentRow)
+          currentRow = []
+        }
+
+        currentRow.push(element.content)
+        last_value = element.y
+
+        if (idx === selected_x.length - 1) {
+          valueMatrix.push(currentRow)
+        }
+
+
+      })
+
+      console.log("x sorted", selected_x)
+      console.log("y sorted", selected_y)
+      console.log(valueMatrix)
+      return valueMatrix
+
+    }
+
+  </script>
+
+  <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleClientLoad()"
+    onreadystatechange="if (this.readyState === 'complete') this.onload()">
+    </script>
+</body>
+
+</html>
