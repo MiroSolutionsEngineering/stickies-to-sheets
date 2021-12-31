@@ -1,4 +1,4 @@
-# Miro starter app
+# Stickie to Sheets
 
 ## How to start
 
